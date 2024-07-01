@@ -1,35 +1,35 @@
 package org.yuanrui.sync;
 
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Phaser;
 
-public class CyclicBarrierTiming {
+public class PhaserTiming {
 
-    public static long time(Executor executor, int concurrency, Runnable action) throws InterruptedException, BrokenBarrierException {
-        CyclicBarrier barrier = new CyclicBarrier(concurrency + 1); // 加1是因为主线程也要参与屏障
+    public static long time(Executor executor, int concurrency, Runnable action) throws InterruptedException {
+        Phaser phaser = new Phaser(concurrency + 1); // 主线程 + 并发线程数
 
         for (int i = 0; i < concurrency; i++) {
             executor.execute(() -> {
+                phaser.arriveAndAwaitAdvance(); // 表示线程已准备好，等待其他线程
                 try {
-                    barrier.await(); // 等待所有线程都准备好
                     action.run();
-                    barrier.await(); // 第二次阻塞点
-                } catch (Exception e) {
-                    Thread.currentThread().interrupt();
+                } finally {
+                    phaser.arriveAndDeregister(); // 表示任务完成，注销该线程
                 }
             });
         }
 
-        barrier.await(); // 主线程等待所有工作线程准备好
+        // 主线程也作为一个参与者，等待所有工作线程准备好
+        phaser.arriveAndAwaitAdvance();
         long startNanos = System.nanoTime();
 
-        barrier.await(); // 第二次等待所有工作线程完成任务
+        // 主线程等待所有工作线程完成任务
+        phaser.arriveAndAwaitAdvance();
         return System.nanoTime() - startNanos;
     }
 
-    public static void main(String[] args) throws InterruptedException, BrokenBarrierException {
+    public static void main(String[] args) throws InterruptedException {
         int concurrency = 5;
         Executor executor = Executors.newFixedThreadPool(concurrency);
         Runnable action = () -> {
